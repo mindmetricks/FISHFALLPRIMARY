@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Lost Fish</title>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #1e90ff;
+        }
+        body {
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #1e90ff;
+        }
+        #instruction {
+            padding-top: 150px;
+            font-size: 30px;
+            color: white;
+            display: none;
+        }
+
+        /* Hide form initially */
+        #userForm {
+            display: none;
+            color: white;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="instruction">Press Enter to Start</div>
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- User input form -->
+    <div id="userForm">
+        <h2>Please enter your details:</h2>
+        <form id="detailsForm">
+            <label for="name">Name:</label>
+            <input type="text" id="name" name="name" required><br>
+            
+            <label for="contact">Contact:</label>
+            <input type="text" id="contact" name="contact" required><br>
+
+            <label for="rollNumber">Roll Number:</label>
+            <input type="text" id="rollNumber" name="rollNumber" required><br>
+
+            <button type="submit">Submit and Download Log</button>
+        </form>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Existing variables and logic omitted for brevity...
+
+        function gameOver() {
+            gameRunning = false;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const imageWidth = canvas.width * 0.4;
+            const imageHeight = (imageWidth * 150) / 300;
+            const imageX = (canvas.width - imageWidth) / 2;
+            const imageY = (canvas.height - imageHeight) / 2;
+            ctx.drawImage(imgend, imageX, imageY, imageWidth, imageHeight);
+            ctx.font = "33px Arial";
+            ctx.fillStyle = "yellow";
+            ctx.textAlign = "center";
+            ctx.fillText("Game Over! Bob could not be saved and died in the depths of the ocean.", canvas.width / 2, imageY - 20);
+            
+            setTimeout(() => {
+                document.getElementById('userForm').style.display = 'block'; 
+                document.getElementById('gameCanvas').style.display = 'none'; // Hide canvas
+            }, 3000);
+        }
+
+        // Handle form submission
+        document.getElementById('detailsForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('name').value;
+            const contact = document.getElementById('contact').value;
+            const rollNumber = document.getElementById('rollNumber').value;
+
+            // Add user details to the collision log
+            collisionLog.push({ object: 'Name', timestamp: name });
+            collisionLog.push({ object: 'Contact', timestamp: contact });
+            collisionLog.push({ object: 'Roll Number', timestamp: rollNumber });
+
+            downloadCSV(); // Download the CSV with the user details
+        });
+
+        // Modified function to include user details in the CSV
+        function downloadCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,Object,Timestamp (Seconds)\n";
+            collisionLog.forEach(log => {
+                csvContent += `${log.object},${log.timestamp}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "collision_log.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Existing game logic and functions (like countdown, gameLoop, etc.) omitted for brevity...
+
+
+        const FPS = 60;
+        const LIVES = 5;
+        const COLLISION_COOLDOWN = 90;  
+        const SCORE_INCREMENT_ON_COLLISION = 400;
+        const MAX_TOTAL_SCORE = 4500;
+        const FISH_WIDTH = canvas.width * 0.07;
+        const FISH_HEIGHT = canvas.height * 0.07;
+        const SHARK_WIDTH = canvas.width * 0.1;
+        const SHARK_HEIGHT = canvas.height * 0.1;
+        const UNSHARK_WIDTH = canvas.width * 0.1;
+        const UNSHARK_HEIGHT = canvas.height * 0.1;
+
+        let gameRunning = false;  // Game starts as not running
+        let score = 0;
+        let lives = LIVES;
+        let sharks = [];
+        let unsharks = [];
+        let wordClouds = [];
+        let frameCount = 0;
+        let startTime = Date.now();  // Game start time in milliseconds
+        let currentRate = 1; // Initial rate for progress bar (100%)
+        const requiredScoreToEnd = 4000; // Required score to win the game
+        let lastScoreUpdateTime ;
+        let countdown = 3;  // Countdown variable
+
+        // Array to log collisions
+        let collisionLog = [];
+
+        const imgend = new Image();;
+        imgend.src = '8.png'
+
+        // Load images
+        const fishImg = new Image();
+        fishImg.src = '10.png';  // replace with your image path
+
+        const beepSound = new Audio('erur.mp3'); // Path to your beep sound file
+
+        const sharkImg = new Image();
+        const unsharkImg = new Image();
+        const oceanImg = new Image();
+        oceanImg.src = '12.jpg';  // replace with your image path
+
+        if (Math.random() < 0.5) {
+            sharkImg.src = 'A.png'; // A is shark
+            unsharkImg.src = 'B.png';  // B is unshark
+            collisionLog.push({
+                object: 'SHARK',
+                timestamp: 'A' // Log time with 2 decimal places
+            });
+        } else {
+            sharkImg.src = 'B.png';  // B is shark
+            unsharkImg.src = 'A.png';  // A is unshark
+            collisionLog.push({
+                object: 'UNSHARK',
+                timestamp: 'A' // Log time with 2 decimal places
+            });
+        }
+
+        // Function to check if two objects are overlapping
+        function isOverlapping(obj1, obj2, width1, height1, width2, height2) {
+            return (
+                obj1.x < obj2.x + width2 &&
+                obj1.x + width1 > obj2.x &&
+                obj1.y < obj2.y + height2 &&
+                obj1.y + height1 > obj2.y
+            );
+        }
+
+        // Function to log collisions with timestamps in seconds from game start
+        function logCollision(objectType) {
+            const currentTime = (Date.now() - startTime) / 1000;  // Calculate time in seconds
+            collisionLog.push({
+                object: objectType,
+                timestamp: currentTime.toFixed(2) // Log time with 2 decimal places
+            });
+        }
+
+        function updateScoreWithTime() {
+            const currentTime = Date.now();
+            const elapsedTimeSinceLastUpdate = (currentTime - lastScoreUpdateTime) / 1000; // Time since last score update in seconds
+            if (elapsedTimeSinceLastUpdate >= 1) {
+                const timeInSeconds = Math.floor(elapsedTimeSinceLastUpdate); // Whole seconds passed
+                score += 60 * timeInSeconds;  // 60 points for every second
+                lastScoreUpdateTime = currentTime; // Reset the last update time
+            }
+        }
+
+        // Fish class
+        class Fish {
+            constructor() {
+                this.x = canvas.width / 2 - FISH_WIDTH / 2;
+                this.y = canvas.height / 4;
+                this.lives = LIVES;
+                this.collisionCooldown = 0;
+            }
+
+            moveLeft() {
+                if (this.x > 0) this.x -= 10;
+            }
+
+            moveRight() {
+                if (this.x < canvas.width - FISH_WIDTH) this.x += 10;
+            }
+
+            update() {
+                if (this.collisionCooldown > 0) this.collisionCooldown -= 1;
+            }
+
+            draw() {
+                ctx.drawImage(fishImg, this.x, this.y, FISH_WIDTH, FISH_HEIGHT);
+            }
+        }
+
+        // Shark class
+        class Shark {
+            constructor() {
+                this.x = Math.random() * (canvas.width - SHARK_WIDTH);
+                this.y = canvas.height;
+            }
+
+            update() {
+                this.y -= 3;
+                if (this.y < -SHARK_HEIGHT) this.y = canvas.height;
+            }
+
+            draw() {
+                ctx.drawImage(sharkImg, this.x, this.y, SHARK_WIDTH, SHARK_HEIGHT);
+            }
+        }
+
+        // Unshark class
+        class Unshark {
+            constructor() {
+                this.x = Math.random() * (canvas.width - UNSHARK_WIDTH);
+                this.y = (canvas.height / 3) + Math.random() * ((canvas.height * 2 / 3) - UNSHARK_HEIGHT);
+            }
+
+            update() {
+                this.y -= 3;  
+                if (this.y < -UNSHARK_HEIGHT) this.y = canvas.height / 3;
+            }
+
+            draw() {
+                ctx.drawImage(unsharkImg, this.x, this.y, UNSHARK_WIDTH, UNSHARK_HEIGHT);
+            }
+        }
+
+        // Word Cloud class
+        class WordCloud {
+            constructor(x, y, text, duration) {
+                this.x = x;
+                this.y = y;
+                this.text = text;
+                this.duration = duration;
+                this.elapsedTime = 0;
+            }
+
+            update() {
+                this.elapsedTime += 1;
+                if (this.elapsedTime >= this.duration) {
+                    const index = wordClouds.indexOf(this);
+                    wordClouds.splice(index, 1);
+                }
+            }
+
+            draw() {
+                ctx.font = `${20 + this.elapsedTime}px Arial`;
+                ctx.fillStyle = 'red';
+                ctx.fillText(this.text, this.x, this.y);
+            }
+        }
+
+        const fish = new Fish();
+
+        // New variables for collision mask
+        let showMask = false;  // Flag to indicate whether to show the mask
+        let maskDuration = 30; // Duration of the mask in frames (0.5 seconds at 60 FPS)
+
+
+        const MAX_SHARKS = 7;  // Max number of sharks allowed on screen
+        const MAX_UNSHARKS = 3; // Max number of unsharks allowed on screen
+        
+        function gameLoop() {
+            if (!gameRunning) return;
+        
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(oceanImg, 0, 0, canvas.width, canvas.height);
+
+            if (showMask) {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'; // Red color with 50% transparency
+                ctx.fillRect(0, 0, canvas.width, canvas.height); // Draw the mask
+                maskDuration--; // Decrease the mask duration counter
+        
+                // Hide the mask after duration ends
+                if (maskDuration <= 0) {
+                    showMask = false; // Reset mask flag
+                    maskDuration = 30; // Reset to original duration for next collision
+                }
+            }
+        
+            if (lives > 0) {  
+                if (keys['ArrowLeft']) fish.moveLeft();
+                if (keys['ArrowRight']) fish.moveRight();
+            }
+        
+            // Limit shark spawning
+            if (frameCount % 360 === 0 && sharks.length < MAX_SHARKS) {
+                sharks.push(new Shark());
+            }
+        
+            // Limit unshark spawning
+            if (frameCount % 600 === 0 && unsharks.length < MAX_UNSHARKS) {
+                unsharks.push(new Unshark());
+            }
+        
+            frameCount++;
+            updateScoreWithTime();
+        
+            // Update and draw sharks
+            sharks.forEach((shark, index) => {
+                shark.update();
+                shark.draw();
+        
+                // Remove shark if it goes off-screen
+                if (shark.y < -SHARK_HEIGHT) {
+                    sharks.splice(index, 1);
+                }
+        
+                // Collision detection
+                if (fish.collisionCooldown === 0 && isOverlapping(fish, shark, FISH_WIDTH, FISH_HEIGHT, SHARK_WIDTH, SHARK_HEIGHT)) {
+                    lives -= 1;
+                    score -= SCORE_INCREMENT_ON_COLLISION;
+                    fish.collisionCooldown = COLLISION_COOLDOWN;
+                    logCollision("Shark");
+                    wordClouds.push(new WordCloud(fish.x + FISH_WIDTH / 2, fish.y, '-400', 60));
+                    currentRate *= 0.8;  // Reduce progress bar rate by 20%
+                    beepSound.play();
+                    showMask = true; // Set the mask flag to true
+                }
+            });
+        
+            // Update and draw unsharks
+            unsharks.forEach((unshark, index) => {
+                unshark.update();
+                unshark.draw();
+        
+                // Remove unshark if it goes off-screen
+                if (unshark.y < -UNSHARK_HEIGHT) {
+                    unsharks.splice(index, 1);
+                }
+        
+                // Collision detection
+                if (fish.collisionCooldown === 0 && isOverlapping(fish, unshark, FISH_WIDTH, FISH_HEIGHT, UNSHARK_WIDTH, UNSHARK_HEIGHT)) {
+                    lives -= 1;
+                    score -= SCORE_INCREMENT_ON_COLLISION;
+                    fish.collisionCooldown = COLLISION_COOLDOWN;
+                    logCollision("Unshark");
+                    wordClouds.push(new WordCloud(fish.x + FISH_WIDTH / 2, fish.y, '-400', 60));
+                    currentRate *= 0.8;  // Reduce progress bar rate by 20%
+                    beepSound.play();
+                    showMask = true; // Set the mask flag to true
+                }
+            });
+        
+            wordClouds.forEach(cloud => {
+                cloud.update();
+                cloud.draw();
+            });
+
+            fish.update();
+            fish.draw();
+
+            drawProgressBar();
+
+            if (score >= requiredScoreToEnd) {
+                // Delay the gameOver function by 500 milliseconds
+                setTimeout(() => {
+                    gameOver(); 
+                }, 500);
+            }
+
+            ctx.font = "30px Arial";
+            ctx.fillStyle = "white";
+            ctx.fillText(`Score: ${score}`, 10, 30);
+            ctx.fillText(`Lives: ${lives}`, 10, 60);
+
+            if (lives <= 0) {
+                // Delay the gameOver function by 500 milliseconds
+                setTimeout(() => {
+                    gameOver(); 
+                }, 500);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function drawProgressBar() {
+            const barWidth = canvas.width * 0.6;  // Make the bar smaller
+            const barHeight = 30;
+            const barX = (canvas.width * 0.25);  // Position it to the right
+            const barY = 10;  // Moved downwards to avoid overlap with text
+
+            const elapsed = (Date.now() - startTime) / 1000;  // Time since game started in seconds
+            const totalDuration = 60 * currentRate;  // Adjusted based on collision rate reduction
+            const progress = Math.min(elapsed / totalDuration, 1);  // Ensure it doesn't exceed 100%
+
+            // Draw background bar
+            ctx.fillStyle = '#000';
+            ctx.fillRect(barX, barY, barWidth, barHeight);
+
+            // Draw filled part of the progress bar
+            ctx.fillStyle = progress >= 1 ? 'green' : 'yellow';
+            ctx.fillRect(barX, barY, barWidth * progress, barHeight);
+
+            // Draw border for the progress bar
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(barX, barY, barWidth, barHeight);
+        }
+
+        const keys = {};
+        window.addEventListener('keydown', (e) => keys[e.key] = true);
+        window.addEventListener('keyup', (e) => keys[e.key] = false);
+
+        // Show instructions and start countdown
+        function startGame() {
+            document.getElementById('instruction').style.display = 'none'; // Hide instruction
+            countdownToStart();
+        }
+
+    
+        function countdownToStart() {
+            if (countdown > 0) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(oceanImg, 0, 0, canvas.width, canvas.height);
+                ctx.font = "100px Arial";
+                ctx.fillStyle = "white";
+                ctx.fillText(countdown, canvas.width / 2 - 50, canvas.height / 2);
+                countdown--;
+                setTimeout(countdownToStart, 1000); // 1 second countdown
+            } else {
+                gameRunning = true; // Start the game after countdown
+                lastScoreUpdateTime = Date.now(); // Set lastScoreUpdateTime when game starts
+                startTime = lastScoreUpdateTime;
+                gameLoop(); // Start game loop
+            }
+        }
+
+        // Start the game on pressing Enter
+        window.addEventListener('keydown', (e) => {
+            if (e.key === "Enter" && !gameRunning) {
+                startGame();
+            }
+        });
+
+        // Show instructions
+        document.getElementById('instruction').style.display = 'block';
+    </script>
+
+
+
+</body>
+</html>
